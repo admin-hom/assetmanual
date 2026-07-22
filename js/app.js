@@ -262,6 +262,7 @@ function renderAssetList() {
         <input type="checkbox" data-select="${a.id}" ${selectedForPrint.has(a.id) ? "checked" : ""}>
       </label>
       <span class="mono display-id" data-open="${a.id}">${a.displayId}</span>
+      <button class="auth-only mini danger" data-del-asset="${a.id}">Hapus</button>
     </li>`).join("") || `<li class="empty">Belum ada aset tercatat</li>`;
 
   document.querySelectorAll("[data-select]").forEach(cb => {
@@ -274,7 +275,17 @@ function renderAssetList() {
   document.querySelectorAll("[data-open]").forEach(span => {
     span.onclick = () => openDetail(span.dataset.open);
   });
+  document.querySelectorAll("[data-del-asset]").forEach(btn => {
+    btn.onclick = () => deleteAsset(btn.dataset.delAsset);
+  });
   updatePrintCount();
+}
+
+async function deleteAsset(id) {
+  if (!currentUser) return alert("Login dulu untuk menghapus aset.");
+  if (!confirm("Hapus aset ini? Nomor asetnya nggak akan dipakai ulang.")) return;
+  selectedForPrint.delete(id);
+  await deleteDoc(doc(db, "assets", id));
 }
 
 function updatePrintCount() {
