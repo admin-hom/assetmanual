@@ -26,16 +26,85 @@ let currentUser = null;
 let selectedForPrint = new Set();
 
 /* ---------- helpers ---------- */
+// Consonant-skeleton abbreviation, ala kode bandara/saham: huruf pertama +
+// konsonan berikutnya (vokal di-skip), diisi huruf apa aja kalau kurang.
+function consonantSkeleton(word, len) {
+  const w = (word || "").replace(/[^a-zA-Z]/g, "");
+  if (!w) return "X".repeat(len);
+  const vowels = "AEIOU";
+  let result = w[0].toUpperCase();
+  for (let i = 1; i < w.length && result.length < len; i++) {
+    const ch = w[i].toUpperCase();
+    if (!vowels.includes(ch)) result += ch;
+  }
+  for (let i = 1; i < w.length && result.length < len; i++) {
+    const ch = w[i].toUpperCase();
+    result += ch;
+  }
+  return (result + "XXX").slice(0, len);
+}
+
 function genCode(name, existingCodes) {
-  let base = (name || "").replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 4);
-  if (!base) base = "XXX";
-  let code = base;
+  const words = (name || "").trim().split(/\s+/).filter(Boolean);
+  const candidates = [];
+
+  if (words.length >= 3) {
+    candidates.push(words.slice(0, 3).map(w => w[0].toUpperCase()).join(""));
+  } else if (words.length === 2) {
+    candidates.push((words[0][0] + consonantSkeleton(words[1], 2)).toUpperCase());
+    candidates.push((words[0][0] + words[1].replace(/[^a-zA-Z]/g, "").slice(0, 2)).toUpperCase());
+  }
+  candidates.push(consonantSkeleton(words[0] || name, 3));
+
+  for (const c of candidates) {
+    if (c && c.length === 3 && !existingCodes.includes(c)) return c;
+  }
+
+  // Tabrakan: tetep 3 huruf kalau bisa, coba geser skeleton-nya
+  const base = (words[0] || name || "X").replace(/[^a-zA-Z]/g, "").toUpperCase();
+  for (let offset = 1; offset < base.length; offset++) {
+    const shifted = (base[0] + base.slice(offset)).slice(0, 3).padEnd(3, "X");
+    if (!existingCodes.includes(shifted)) return shifted;
+  }
+
+  // Fallback terakhir: 2 huruf + angka (jarang kejadian)
   let n = 2;
-  while (existingCodes.includes(code)) {
-    code = base + n;
+  let code = candidates[0].slice(0, 2) + n;
+  while (existingCodes.includes(code) && n < 20) {
     n++;
+    code = candidates[0].slice(0, 2) + n;
   }
   return code;
+}
+
+// Kompres foto jadi thumbnail base64 kecil biar aman disimpen langsung di Firestore
+// (nggak butuh Firebase Storage / upgrade billing).
+function compressImage(file, maxDim = 320, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function pad3(n) {
@@ -248,6 +317,9 @@ async function generateAsset(formData) {
     location: { id: loc.id, name: loc.name, code: loc.code },
     month: formData.month,
     year: formData.year,
+    merek: formData.merek || "",
+    seri: formData.seri || "",
+    photo: formData.photo || "",
     createdAt: serverTimestamp()
   });
 
@@ -313,12 +385,15 @@ async function renderDetail(assetId) {
   const a = snap.data();
   box.innerHTML = `
     <div class="stamp-card">
+      ${a.photo ? `<img class="detail-photo" src="${a.photo}" alt="Foto aset">` : ""}
       <div class="mono big-id">${a.displayId}</div>
       <table class="detail-table">
         <tr><td>Satker</td><td>${a.satker.name} (${a.satker.code})</td></tr>
         <tr><td>Kategori</td><td>${a.category.name} (${a.category.code})</td></tr>
         <tr><td>Jenis Barang</td><td>${a.type.name} (${a.type.code})</td></tr>
         <tr><td>Lokasi Ruangan</td><td>${a.location.name} (${a.location.code})</td></tr>
+        <tr><td>Merek</td><td>${a.merek || "-"}</td></tr>
+        <tr><td>Seri</td><td>${a.seri || "-"}</td></tr>
         <tr><td>Bulan / Tahun Perolehan</td><td>${a.month} / ${a.year}</td></tr>
       </table>
     </div>`;
@@ -399,18 +474,25 @@ function initForms() {
     const btn = el("btn-generate");
     btn.disabled = true;
     try {
+      const photoFile = el("gen-photo").files[0];
+      const photoDataUrl = photoFile ? await compressImage(photoFile) : "";
+
       const docId = await generateAsset({
         satkerCode: el("gen-satker").value,
         categoryId: el("gen-category").value,
         typeId: el("gen-type").value,
         locationId: el("gen-location").value,
         month: el("gen-month").value,
-        year: el("gen-year").value
+        year: el("gen-year").value,
+        merek: el("gen-merek").value.trim(),
+        seri: el("gen-seri").value.trim(),
+        photo: photoDataUrl
       });
       if (docId) {
         el("gen-result").classList.remove("hidden");
         el("gen-result-text").textContent = "Aset berhasil dibuat: " + docId;
         e.target.reset();
+        el("photo-preview").innerHTML = "";
         fillSatkerSelect();
       }
     } catch (err) {
@@ -418,6 +500,14 @@ function initForms() {
     } finally {
       btn.disabled = false;
     }
+  });
+
+  el("gen-photo").addEventListener("change", async () => {
+    const file = el("gen-photo").files[0];
+    const preview = el("photo-preview");
+    if (!file) { preview.innerHTML = ""; return; }
+    const dataUrl = await compressImage(file);
+    preview.innerHTML = `<img src="${dataUrl}" alt="preview">`;
   });
 }
 
