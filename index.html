@@ -60,10 +60,23 @@
             <input type="number" id="gen-year" required min="2000" max="2100">
           </div>
           <div class="field">
+            <label>Merek</label>
+            <input type="text" id="gen-merek" placeholder="misal: Epson">
+          </div>
+          <div class="field">
+            <label>Seri / Tipe</label>
+            <input type="text" id="gen-seri" placeholder="misal: L3110">
+          </div>
+          <div class="field">
+            <label>Foto (opsional)</label>
+            <input type="file" id="gen-photo" accept="image/*">
+          </div>
+          <div class="field">
             <label>&nbsp;</label>
             <button type="submit" class="primary" id="btn-generate">Generate</button>
           </div>
         </div>
+        <div id="photo-preview" class="photo-preview"></div>
       </form>
       <div id="gen-result" class="mono hidden">
         <div id="gen-result-text"></div>
