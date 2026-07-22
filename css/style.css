@@ -237,3 +237,20 @@ ul.data-list .sub { color: var(--muted); font-size: 12px; }
 
 .muted { color: var(--muted); }
 .error { color: var(--danger); }
+
+.photo-preview { margin-top: 10px; }
+.photo-preview img {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--line);
+  display: block;
+}
+.detail-photo {
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  margin-bottom: 16px;
+  display: block;
+}
